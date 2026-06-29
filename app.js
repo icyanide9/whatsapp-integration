@@ -24,23 +24,39 @@ app.get('/webhook', (req, res) => {
 });
 
 // 2. Route for Meta's POST requests (Real incoming WhatsApp messages)
-app.post('/webhook', (req, res) => {
-  const timestamp = new Date().toISOString().replace('T', ' ').slice(0, 19);
-  console.log(`\n\nWebhook received ${timestamp}\n`);
-  console.log(JSON.stringify(req.body, null, 2));
+const axios = require('axios'); // Make sure to run 'npm install axios'
 
+app.post('/webhook', async (req, res) => {
   const body = req.body;
 
-  // Verify this is a WhatsApp event payload
   if (body.object === 'whatsapp_business_account') {
     if (body.entry && body.entry[0].changes && body.entry[0].changes[0].value.messages) {
       const message = body.entry[0].changes[0].value.messages[0];
-      const from = message.from;
-      const msgBody = message.text ? message.text.body : "[Non-text message]";
-      
+      const from = message.from; 
+      const msgBody = message.text ? message.text.body : "";
+
       console.log(`👉 Real Message Received from ${from}: "${msgBody}"`);
+
+      // NEW: Send the echo reply back
+      try {
+        await axios({
+          method: 'POST',
+          url: `https://graph.facebook.com/v25.0/${process.env.PHONE_NUMBER_ID}/messages`,
+          headers: {
+            'Authorization': `Bearer ${process.env.WHATSAPP_TOKEN}`,
+            'Content-Type': 'application/json'
+          },
+          data: {
+            messaging_product: 'whatsapp',
+            to: from,
+            text: { body: `Echo: ${msgBody}` }
+          }
+        });
+        console.log(`✅ Echo sent successfully to ${from}`);
+      } catch (error) {
+        console.error('❌ Error sending message:', error.response ? error.response.data : error.message);
+      }
     }
-    // Always return a 200 OK to Meta so they know you processed it
     res.status(200).end();
   } else {
     res.status(404).end();
