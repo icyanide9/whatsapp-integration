@@ -1,55 +1,58 @@
+// Import Express.js
 const express = require('express');
+// Create an Express app
 const app = express();
+// Middleware to parse JSON bodies
 app.use(express.json());
 
-const VERIFY_TOKEN = process.env.VERIFY_TOKEN;
-const WHATSAPP_TOKEN = process.env.WHATSAPP_TOKEN;
+// Set port and tokens securely from environment variables
+const port = process.env.PORT || 3000;
+const verifyToken = process.env.VERIFY_TOKEN;
 
-// 1. Handshake verification (GET)
+// 1. Route for Meta's GET verification handshake
 app.get('/webhook', (req, res) => {
   const mode = req.query['hub.mode'];
   const token = req.query['hub.verify_token'];
   const challenge = req.query['hub.challenge'];
 
-  if (mode && token) {
-    if (mode === 'subscribe' && token === VERIFY_TOKEN) {
-      console.log('WEBHOOK_VERIFIED');
-      res.status(200).send(challenge);
-    } else {
-      res.sendStatus(403);
-    }
+  if (mode === 'subscribe' && token === verifyToken) {
+    console.log('WEBHOOK VERIFIED');
+    res.status(200).send(challenge);
+  } else {
+    res.status(403).end();
   }
 });
 
-// 2. Receiving live messages (POST)
+// 2. Route for Meta's POST requests (Real incoming WhatsApp messages)
 app.post('/webhook', (req, res) => {
+  const timestamp = new Date().toISOString().replace('T', ' ').slice(0, 19);
+  console.log(`\n\nWebhook received ${timestamp}\n`);
+  console.log(JSON.stringify(req.body, null, 2));
+
   const body = req.body;
 
-  console.log('Incoming Webhook Payload:', JSON.stringify(body, null, 2));
-
+  // Verify this is a WhatsApp event payload
   if (body.object === 'whatsapp_business_account') {
     if (body.entry && body.entry[0].changes && body.entry[0].changes[0].value.messages) {
       const message = body.entry[0].changes[0].value.messages[0];
-      const from = message.from; // Your personal phone number
-      const msgBody = message.text ? message.text.body : "";
-
-      console.log(`Received message from ${from}: ${msgBody}`);
+      const from = message.from;
+      const msgBody = message.text ? message.text.body : "[Non-text message]";
       
-      // The webhook successfully received your message! 
-      // You can add logic here later to reply back using WHATSAPP_TOKEN.
+      console.log(`👉 Real Message Received from ${from}: "${msgBody}"`);
     }
-    res.sendStatus(200);
+    // Always return a 200 OK to Meta so they know you processed it
+    res.status(200).end();
   } else {
-    res.sendStatus(404);
+    res.status(404).end();
   }
 });
 
-// Root URL placeholder to prevent 403 home errors
+// 3. Optional fallback placeholder for the root domain page
 app.get('/', (req, res) => {
-  res.send('WhatsApp Webhook Server is Live and Running!');
+  res.send('WhatsApp Webhook Server is Alive and Running!');
 });
 
-const PORT = process.env.PORT || 3000;
-app.listen(PORT, () => {
-  console.log(`Server is listening on port ${PORT}`);
+// Start the server
+app.listen(port, () => {
+  console.log(`\nListening on port ${port}\n`);
 });
