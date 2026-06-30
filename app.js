@@ -79,11 +79,11 @@ app.get('/test-foundry', async (req, res) => {
   // Define the payload clearly so we can log it
   const payload = {
     parameters: {
-      "complaint-id": "TEST-CW-22078-001",
-      "customer": "ri.phonograph2-objects.main.object.v4.3a948240-6e98-4164-b28a-010a584263cb.AE_Z5PUMGXPCBX4PN9GKBLSKDINCB3AR9GJXNKTTTJWE", 
-      "property": "ri.phonograph2-objects.main.object.v4.e28ca6d7-e106-4144-909e-0fcc33a1008a.AD9L8V85G5NIXKHE87DRTE50HAWSQ76FDYNMHVB0-XWF",
-      "unit": "ri.phonograph2-objects.main.object.v4.c0220c99-6c62-4df3-bc54-498e4a233880.AYQK1CR4XDAAUCBNK1S_QWWUKMINLY3BI6BR-SQU5KWO",
-      "complaint-description": "Test complaint for APT-22078 from Render bridge.",
+      "complaint-id": "TEST-CW-22078-0013456",
+      "customer": "CUST-0090",
+      "property": "PROP-DD-15",
+      "unit": "UNIT-DD-0008",
+      "complaint-description": "Test complaint from cURL",
       "source-channel": "WhatsApp"
     }
   };
