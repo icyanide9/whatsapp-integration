@@ -72,3 +72,29 @@ app.get('/', (req, res) => {
 app.listen(port, () => {
   console.log(`\nListening on port ${port}\n`);
 });
+
+app.get('/test-foundry', async (req, res) => {
+  const foundryUrl = `https://${process.env.FOUNDRY_HOSTNAME}/api/v2/ontologies/${process.env.ONTOLOGY_RID}/actions/${process.env.CCL_ACTION_API_NAME}/apply`;
+
+  try {
+    const response = await axios.post(foundryUrl, {
+      parameters: {
+        "complaintId": "TEST-CW-22078-001",
+        "customer": "ri.phonograph2-objects.main.object.v4.3a948240-6e98-4164-b28a-010a584263cb.AE_Z5PUMGXPCBX4PN9GKBLSKDINCB3AR9GJXNKTTTJWE", 
+        "property": "ri.phonograph2-objects.main.object.v4.e28ca6d7-e106-4144-909e-0fcc33a1008a.AD9L8V85G5NIXKHE87DRTE50HAWSQ76FDYNMHVB0-XWF",
+        "unit": "ri.phonograph2-objects.main.object.v4.c0220c99-6c62-4df3-bc54-498e4a233880.AYQK1CR4XDAAUCBNK1S_QWWUKMINLY3BI6BR-SQU5KWO",
+        "description": "Test complaint for APT-22078 from Render bridge.",
+        "sourceChannel": "WhatsApp"
+      }
+    }, {
+      headers: {
+        "Authorization": `Bearer ${process.env.FOUNDRY_API_TOKEN}`,
+        "Content-Type": "application/json"
+      }
+    });
+    
+    res.status(200).send("✅ Success: " + JSON.stringify(response.data));
+  } catch (error) {
+    res.status(500).send("❌ Error: " + JSON.stringify(error.response?.data || error.message));
+  }
+});
