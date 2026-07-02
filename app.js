@@ -32,7 +32,7 @@ app.post('/webhook', async (req, res) => {
   if (body.object === 'whatsapp_business_account') {
     if (body.entry && body.entry[0].changes && body.entry[0].changes[0].value.messages) {
       const message = body.entry[0].changes[0].value.messages[0];
-      const from = message.from; 
+      const from = message.from;
       const msgBody = message.text ? message.text.body : "";
 
       console.log(`👉 Real Message Received from ${from}: "${msgBody}"`);
@@ -68,6 +68,59 @@ app.get('/', (req, res) => {
   res.send('WhatsApp Webhook Server is Alive and Running!');
 });
 
+// 4. Route for Foundry to trigger a WhatsApp update message to a customer
+app.post('/foundry-webhook', async (req, res) => {
+  const authHeader = req.headers['authorization'];
+  const expectedToken = `Bearer ${process.env.FOUNDRY_WEBHOOK_SECRET}`;
+
+  if (!authHeader || authHeader !== expectedToken) {
+    console.warn("⚠️ Unauthorized request received on /foundry-webhook");
+    return res.status(401).json({ error: 'Unauthorized' });
+  }
+
+  const { customerPhone, templateName, templateParams } = req.body;
+
+  if (!customerPhone || !templateName) {
+    return res.status(400).json({ error: 'Missing customerPhone or templateName' });
+  }
+
+  console.log(`👉 Received update from Foundry for customer ${customerPhone} using template "${templateName}"`);
+
+  try {
+    const components = templateParams && templateParams.length > 0
+      ? [{
+          type: 'body',
+          parameters: templateParams.map(param => ({ type: 'text', text: String(param) }))
+        }]
+      : [];
+
+    await axios({
+      method: 'POST',
+      url: `https://graph.facebook.com/v25.0/${process.env.PHONE_NUMBER_ID}/messages`,
+      headers: {
+        'Authorization': `Bearer ${process.env.WHATSAPP_TOKEN}`,
+        'Content-Type': 'application/json'
+      },
+      data: {
+        messaging_product: 'whatsapp',
+        to: customerPhone,
+        type: 'template',
+        template: {
+          name: templateName,
+          language: { code: 'en_US' },
+          components: components
+        }
+      }
+    });
+
+    console.log(`✅ WhatsApp template message sent successfully to ${customerPhone}`);
+    res.status(200).json({ success: true });
+  } catch (error) {
+    console.error('❌ Error sending WhatsApp template message:', error.response ? error.response.data : error.message);
+    res.status(500).json({ error: 'Failed to send WhatsApp message', details: error.response ? error.response.data : error.message });
+  }
+});
+
 // Start the server
 app.listen(port, () => {
   console.log(`\nListening on port ${port}\n`);
@@ -98,7 +151,7 @@ app.get('/test-foundry', async (req, res) => {
         "Content-Type": "application/json"
       }
     });
-    
+
     res.status(200).send("✅ Success: " + JSON.stringify(response.data));
   } catch (error) {
     // This logs the full error details from Foundry in your Render logs
