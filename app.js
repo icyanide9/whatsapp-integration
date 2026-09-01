@@ -78,10 +78,16 @@ app.post('/foundry-webhook', async (req, res) => {
     return res.status(401).json({ error: 'Unauthorized' });
   }
 
-  const { customerPhone, templateName, templateParams } = req.body;
+  const { customerPhone: rawPhone, templateName, templateParams } = req.body;
 
-  if (!customerPhone || !templateName) {
+  if (!rawPhone || !templateName) {
     return res.status(400).json({ error: 'Missing customerPhone or templateName' });
+  }
+
+  // Normalize phone: convert decimal/number to string and add '+' prefix if missing
+  let customerPhone = String(rawPhone).trim();
+  if (!customerPhone.startsWith('+')) {
+    customerPhone = '+' + customerPhone;
   }
 
   console.log(`👉 Received update from Foundry for customer ${customerPhone} using template "${templateName}"`);
