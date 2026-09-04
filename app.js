@@ -5,6 +5,12 @@ const app = express();
 // Middleware to parse JSON bodies
 app.use(express.json());
 
+// Log every incoming request so Render logs show all traffic
+app.use((req, res, next) => {
+  console.log(`📡 [${new Date().toISOString()}] ${req.method} ${req.url}`);
+  next();
+});
+
 // Set port and tokens securely from environment variables
 const port = process.env.PORT || 3000;
 const verifyToken = process.env.VERIFY_TOKEN;
@@ -127,18 +133,14 @@ app.post('/foundry-webhook', async (req, res) => {
   }
 });
 
-// Start the server
-app.listen(port, () => {
-  console.log(`\nListening on port ${port}\n`);
-});
-
 app.get('/test-foundry', async (req, res) => {
   const foundryUrl = `https://${process.env.FOUNDRY_HOSTNAME}/api/v2/ontologies/${process.env.ONTOLOGY_RID}/actions/${process.env.CCL_ACTION_API_NAME}/apply`;
 
-  // Define the payload clearly so we can log it
+  // Define the payload with a dynamic unique complaint-id
+  const uniqueId = `TEST-CW-${Date.now()}`;
   const payload = {
     parameters: {
-      "complaint-id": "TEST-CW-22078-0013456",
+      "complaint-id": uniqueId,
       "customer": "CUST-0090",
       "property": "PROP-DD-15",
       "unit": "UNIT-DD-0008",
@@ -164,4 +166,10 @@ app.get('/test-foundry', async (req, res) => {
     console.error("❌ Foundry API Error Details:", JSON.stringify(error.response?.data, null, 2));
     res.status(500).send("❌ Error: " + JSON.stringify(error.response?.data || error.message));
   }
+});
+
+// Start the server - explicitly bind to 0.0.0.0 for Render port detection
+const HOST = '0.0.0.0';
+app.listen(port, HOST, () => {
+  console.log(`\n🚀 Server listening on ${HOST}:${port}\n`);
 });
