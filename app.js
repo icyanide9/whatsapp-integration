@@ -36,16 +36,20 @@ app.post('/webhook', async (req, res) => {
   const body = req.body;
 
   if (body.object === 'whatsapp_business_account') {
+    console.log("\n=======================================================");
+    console.log("📥 [Meta Webhook] Inbound WhatsApp Event Received:");
+    console.log(JSON.stringify(body, null, 2));
+
     if (body.entry && body.entry[0].changes && body.entry[0].changes[0].value.messages) {
       const message = body.entry[0].changes[0].value.messages[0];
       const from = message.from;
       const msgBody = message.text ? message.text.body : "";
 
-      console.log(`👉 Real Message Received from ${from}: "${msgBody}"`);
+      console.log(`👉 Inbound Message from ${from}: "${msgBody}"`);
 
-      // NEW: Send the echo reply back
+      // Echo reply back
       try {
-        await axios({
+        const echoResponse = await axios({
           method: 'POST',
           url: `https://graph.facebook.com/v25.0/${process.env.PHONE_NUMBER_ID}/messages`,
           headers: {
@@ -58,11 +62,15 @@ app.post('/webhook', async (req, res) => {
             text: { body: `Echo: ${msgBody}` }
           }
         });
-        console.log(`✅ Echo sent successfully to ${from}`);
+        console.log(`✅ Echo sent successfully to ${from}:`, echoResponse.data);
       } catch (error) {
-        console.error('❌ Error sending message:', error.response ? error.response.data : error.message);
+        console.error('❌ Error sending echo message:', error.response ? error.response.data : error.message);
       }
+    } else if (body.entry && body.entry[0].changes && body.entry[0].changes[0].value.statuses) {
+      const status = body.entry[0].changes[0].value.statuses[0];
+      console.log(`ℹ️ [Meta Status Update] Message ID ${status.id} status is now: "${status.status}" for recipient ${status.recipient_id}`);
     }
+    console.log("=======================================================\n");
     res.status(200).end();
   } else {
     res.status(404).end();
@@ -80,14 +88,25 @@ app.post('/foundry-webhook', async (req, res) => {
   const expectedToken = `Bearer ${process.env.FOUNDRY_WEBHOOK_SECRET}`;
 
   if (!authHeader || authHeader !== expectedToken) {
-    console.warn("⚠️ Unauthorized request received on /foundry-webhook");
+    console.warn("⚠️ Unauthorized request received on /foundry-webhook. Header:", authHeader ? "[Provided but invalid]" : "[Missing]");
     return res.status(401).json({ error: 'Unauthorized' });
   }
 
+  console.log("\n=======================================================");
+  console.log("📥 [Foundry Webhook] Outbound trigger received from Foundry");
+  console.log("📦 Raw Request Body:\n", JSON.stringify(req.body, null, 2));
+
   const { customerPhone: rawPhone, templateName, templateParams } = req.body;
 
+  console.log(`📋 Parsed Fields:`);
+  console.log(`   - customerPhone (raw): ${JSON.stringify(rawPhone)}`);
+  console.log(`   - templateName: ${JSON.stringify(templateName)}`);
+  console.log(`   - templateParams (${Array.isArray(templateParams) ? templateParams.length : 0} items):`, templateParams);
+
   if (!rawPhone || !templateName) {
-    return res.status(400).json({ error: 'Missing customerPhone or templateName' });
+    console.error("❌ Validation Failed: Missing customerPhone or templateName");
+    console.log("=======================================================\n");
+    return res.status(400).json({ error: 'Missing customerPhone or templateName', received: req.body });
   }
 
   // Normalize phone: convert decimal/number to string and add '+' prefix if missing
@@ -96,40 +115,68 @@ app.post('/foundry-webhook', async (req, res) => {
     customerPhone = '+' + customerPhone;
   }
 
-  console.log(`👉 Received update from Foundry for customer ${customerPhone} using template "${templateName}"`);
+  // Check for invalid/placeholder phone strings like "Not provided" or empty digits
+  const digitsOnly = customerPhone.replace(/\D/g, '');
+  if (digitsOnly.length < 7 || customerPhone.toLowerCase().includes('not provided')) {
+    console.error(`\n❌ [Foundry Webhook] Invalid recipient phone number: "${rawPhone}"`);
+    console.error(`   👉 Reason: In Foundry, the Customer linked to this complaint has no valid phone number.`);
+    console.error(`   👉 Fix: Open the Customer in Foundry Object Explorer and populate their 'Phone' property (e.g. +917007449611).\n`);
+    console.log("=======================================================\n");
+    return res.status(400).json({
+      error: `Invalid customerPhone: "${rawPhone}". In Foundry, the linked Customer record has no valid phone number.`,
+      receivedPhone: rawPhone,
+      hint: "Set the customer's Phone property in Foundry Object Explorer."
+    });
+  }
+
+  console.log(`📱 Normalized Target Phone: ${customerPhone}`);
 
   try {
     const components = templateParams && templateParams.length > 0
       ? [{
           type: 'body',
-          parameters: templateParams.map(param => ({ type: 'text', text: String(param) }))
+          parameters: templateParams.map((param, idx) => {
+            console.log(`   🔹 Variable {{${idx + 1}}}: "${param}"`);
+            return { type: 'text', text: String(param) };
+          })
         }]
       : [];
 
-    await axios({
+    const metaPayload = {
+      messaging_product: 'whatsapp',
+      to: customerPhone,
+      type: 'template',
+      template: {
+        name: templateName,
+        language: { code: 'en_US' },
+        components: components
+      }
+    };
+
+    console.log(`🚀 Dispatching to Meta Graph API (v25.0 / Phone ID: ${process.env.PHONE_NUMBER_ID}):`);
+    console.log(JSON.stringify(metaPayload, null, 2));
+
+    const metaResponse = await axios({
       method: 'POST',
       url: `https://graph.facebook.com/v25.0/${process.env.PHONE_NUMBER_ID}/messages`,
       headers: {
         'Authorization': `Bearer ${process.env.WHATSAPP_TOKEN}`,
         'Content-Type': 'application/json'
       },
-      data: {
-        messaging_product: 'whatsapp',
-        to: customerPhone,
-        type: 'template',
-        template: {
-          name: templateName,
-          language: { code: 'en_US' },
-          components: components
-        }
-      }
+      data: metaPayload
     });
 
-    console.log(`✅ WhatsApp template message sent successfully to ${customerPhone}`);
-    res.status(200).json({ success: true });
+    console.log(`✅ Meta API Response:`, JSON.stringify(metaResponse.data, null, 2));
+    console.log(`✅ WhatsApp template message delivered successfully to ${customerPhone}`);
+    console.log("=======================================================\n");
+
+    res.status(200).json({ success: true, metaResponse: metaResponse.data });
   } catch (error) {
-    console.error('❌ Error sending WhatsApp template message:', error.response ? error.response.data : error.message);
-    res.status(500).json({ error: 'Failed to send WhatsApp message', details: error.response ? error.response.data : error.message });
+    const errorDetails = error.response ? error.response.data : error.message;
+    console.error('❌ Error sending WhatsApp template message to Meta:');
+    console.error(JSON.stringify(errorDetails, null, 2));
+    console.log("=======================================================\n");
+    res.status(500).json({ error: 'Failed to send WhatsApp message', details: errorDetails });
   }
 });
 
