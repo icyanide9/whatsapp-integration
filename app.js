@@ -36,20 +36,64 @@ app.post('/webhook', async (req, res) => {
   const body = req.body;
 
   if (body.object === 'whatsapp_business_account') {
+    // 1. Immediately acknowledge Meta with 200 OK to prevent webhook retries/timeouts
+    res.status(200).end();
+
     console.log("\n=======================================================");
     console.log("📥 [Meta Webhook] Inbound WhatsApp Event Received:");
     console.log(JSON.stringify(body, null, 2));
 
     if (body.entry && body.entry[0].changes && body.entry[0].changes[0].value.messages) {
       const message = body.entry[0].changes[0].value.messages[0];
-      const from = message.from;
+      const from = message.from; // e.g. "917007449611"
       const msgBody = message.text ? message.text.body : "";
+      const contactName = body.entry[0].changes[0].value.contacts?.[0]?.profile?.name || "Customer";
 
-      console.log(`👉 Inbound Message from ${from}: "${msgBody}"`);
+      console.log(`👉 Inbound Message from ${contactName} (${from}): "${msgBody}"`);
 
-      // Echo reply back
+      // Skip non-text or empty messages
+      if (!msgBody.trim()) {
+        console.log("ℹ️ Empty message body or non-text message. Skipping complaint registration.");
+        console.log("=======================================================\n");
+        return;
+      }
+
+      // 2. Generate unique Complaint ID
+      const complaintId = `CW-${Date.now()}`;
+
+      // 3. Build Foundry Ontology Action Payload
+      const foundryPayload = {
+        parameters: {
+          "complaint-id": complaintId,
+          "customer": process.env.DEFAULT_CUSTOMER_ID || "CUST-0090",
+          "property": process.env.DEFAULT_PROPERTY_ID || "PROP-DD-15",
+          "unit": process.env.DEFAULT_UNIT_ID || "UNIT-DD-0008",
+          "complaint-description": msgBody,
+          "source-channel": "WhatsApp"
+        }
+      };
+
+      const foundryUrl = `https://${process.env.FOUNDRY_HOSTNAME}/api/v2/ontologies/${process.env.ONTOLOGY_RID}/actions/${process.env.CCL_ACTION_API_NAME}/apply`;
+
+      console.log(`🏛️ Registering complaint in Foundry Ontology...`);
+      console.log(`   Endpoint: ${foundryUrl}`);
+      console.log(`   Payload:\n`, JSON.stringify(foundryPayload, null, 2));
+
       try {
-        const echoResponse = await axios({
+        const foundryRes = await axios.post(foundryUrl, foundryPayload, {
+          headers: {
+            "Authorization": `Bearer ${process.env.FOUNDRY_API_TOKEN}`,
+            "Content-Type": "application/json"
+          }
+        });
+
+        console.log(`✅ Complaint ${complaintId} successfully registered in Foundry Ontology!`);
+        console.log(`   Foundry Response:`, JSON.stringify(foundryRes.data));
+
+        // 4. Send Confirmation WhatsApp message back to the customer
+        const replyText = `Hi ${contactName}! 👋\n\nYour complaint has been successfully registered.\n\n📋 *Complaint ID:* ${complaintId}\n📝 *Description:* "${msgBody}"\n\nOur property team will review it and keep you updated here.`;
+
+        const metaResponse = await axios({
           method: 'POST',
           url: `https://graph.facebook.com/v25.0/${process.env.PHONE_NUMBER_ID}/messages`,
           headers: {
@@ -59,19 +103,38 @@ app.post('/webhook', async (req, res) => {
           data: {
             messaging_product: 'whatsapp',
             to: from,
-            text: { body: `Echo: ${msgBody}` }
+            text: { body: replyText }
           }
         });
-        console.log(`✅ Echo sent successfully to ${from}:`, echoResponse.data);
+
+        console.log(`✅ Confirmation message delivered to ${from}:`, metaResponse.data);
       } catch (error) {
-        console.error('❌ Error sending echo message:', error.response ? error.response.data : error.message);
+        console.error('❌ Error registering complaint in Foundry:', error.response ? error.response.data : error.message);
+
+        // Notify customer of processing delay
+        try {
+          await axios({
+            method: 'POST',
+            url: `https://graph.facebook.com/v25.0/${process.env.PHONE_NUMBER_ID}/messages`,
+            headers: {
+              'Authorization': `Bearer ${process.env.WHATSAPP_TOKEN}`,
+              'Content-Type': 'application/json'
+            },
+            data: {
+              messaging_product: 'whatsapp',
+              to: from,
+              text: { body: `Hi ${contactName}, we received your message. There was a temporary delay logging your ticket into the system, but our team has been notified.` }
+            }
+          });
+        } catch (notifyErr) {
+          console.error('❌ Failed to send fallback error message to customer:', notifyErr.response ? notifyErr.response.data : notifyErr.message);
+        }
       }
     } else if (body.entry && body.entry[0].changes && body.entry[0].changes[0].value.statuses) {
       const status = body.entry[0].changes[0].value.statuses[0];
       console.log(`ℹ️ [Meta Status Update] Message ID ${status.id} status is now: "${status.status}" for recipient ${status.recipient_id}`);
     }
     console.log("=======================================================\n");
-    res.status(200).end();
   } else {
     res.status(404).end();
   }
