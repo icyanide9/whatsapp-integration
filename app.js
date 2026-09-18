@@ -204,6 +204,54 @@ app.post('/foundry-webhook', async (req, res) => {
 
   console.log(`📱 Normalized Target Phone: ${customerPhone}`);
 
+  // =========================================================================
+  // 🛡️ Demo Outbound Filter: Ignore old STATUS-CMP-* noise
+  // Only dispatch new intake confirmations (WA-OUT-CMP-WA* and WA-OUT-FOLLOWUP*)
+  // =========================================================================
+  const communication = req.body.communication || req.body;
+  const communicationId = communication.communicationId || communication.communication_id || req.body.communicationId || req.body.communication_id;
+  const direction = communication.direction || req.body.direction;
+  const channel = communication.channel || req.body.channel;
+
+  if (direction && direction !== 'Outbound') {
+    console.log(`⏭️ [Demo Filter] Skipping non-outbound communication (direction: ${direction})`);
+    console.log("=======================================================\n");
+    return res.status(200).json({ skipped: true, reason: `Direction is "${direction}", expected "Outbound"` });
+  }
+
+  if (channel && channel !== 'WhatsApp') {
+    console.log(`⏭️ [Demo Filter] Skipping non-WhatsApp communication (channel: ${channel})`);
+    console.log("=======================================================\n");
+    return res.status(200).json({ skipped: true, reason: `Channel is "${channel}", expected "WhatsApp"` });
+  }
+
+  // 1. Filter by communicationId: only send WA-OUT-CMP-WA* or WA-OUT-FOLLOWUP*
+  if (communicationId) {
+    const isAllowedIntake = communicationId.startsWith('WA-OUT-CMP-WA') || communicationId.startsWith('WA-OUT-FOLLOWUP');
+    if (!isAllowedIntake) {
+      console.log(`⏭️ [Demo Filter] Suppressing old status update communication (${communicationId}).`);
+      console.log("=======================================================\n");
+      return res.status(200).json({
+        skipped: true,
+        reason: `Ignored old status message (${communicationId}). Only WA-OUT-CMP-WA* and WA-OUT-FOLLOWUP* are dispatched for demo.`
+      });
+    }
+  }
+
+  // 2. Fallback check: Filter if templateParams explicitly reference STATUS-CMP-*
+  if (Array.isArray(templateParams)) {
+    const hasOldStatusParam = templateParams.some(p => typeof p === 'string' && p.includes('STATUS-CMP-'));
+    if (hasOldStatusParam) {
+      console.log(`⏭️ [Demo Filter] Suppressing dispatch with old STATUS-CMP params:`, templateParams);
+      console.log("=======================================================\n");
+      return res.status(200).json({
+        skipped: true,
+        reason: 'Ignored old STATUS-CMP update template params for demo.'
+      });
+    }
+  }
+  // =========================================================================
+
   try {
     const components = templateParams && templateParams.length > 0
       ? [{
