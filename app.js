@@ -225,15 +225,15 @@ app.post('/foundry-webhook', async (req, res) => {
     return res.status(200).json({ skipped: true, reason: `Channel is "${channel}", expected "WhatsApp"` });
   }
 
-  // 1. Filter by communicationId: only send WA-OUT-CMP-WA* or WA-OUT-FOLLOWUP*
+  // 1. Filter by communicationId: only send WA-OUT-* (e.g. WA-OUT-CMP-WA*, WA-OUT-FOLLOWUP*, WA-OUT-CLARIFY*)
   if (communicationId) {
-    const isAllowedIntake = communicationId.startsWith('WA-OUT-CMP-WA') || communicationId.startsWith('WA-OUT-FOLLOWUP');
+    const isAllowedIntake = communicationId.startsWith('WA-OUT-');
     if (!isAllowedIntake) {
       console.log(`⏭️ [Demo Filter] Suppressing old status update communication (${communicationId}).`);
       console.log("=======================================================\n");
       return res.status(200).json({
         skipped: true,
-        reason: `Ignored old status message (${communicationId}). Only WA-OUT-CMP-WA* and WA-OUT-FOLLOWUP* are dispatched for demo.`
+        reason: `Ignored message (${communicationId}). Only WA-OUT-* records are dispatched for demo.`
       });
     }
   }
